@@ -2,8 +2,11 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { existsSync } from "fs";
 if (existsSync(".env")) {
+  console.warn("[DB] Loading .env file (overriding env vars)");
   dotenv.config();
 }
+
+console.log("[DB] Connecting with host:", process.env.DB_HOST, "database:", process.env.DB_NAME);
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
