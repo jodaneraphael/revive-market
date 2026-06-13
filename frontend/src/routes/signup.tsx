@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { toast } from "sonner";
 import { storeAuth } from "@/lib/auth";
+import { authApi } from "@/lib/api";
 import { UserPlus, Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 
@@ -45,22 +46,13 @@ function SignupPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || data.errors?.[0]?.msg || "Registration failed");
-        return;
-      }
+      const data = await authApi.register({ name, email, phone, password });
       storeAuth(data.token, data.user);
       toast.success("Account created! Welcome to Revive Market.");
       if (redirect) navigate({ to: redirect });
       else navigate({ to: "/account" });
-    } catch {
-      toast.error("Unable to connect to server");
+    } catch (e: any) {
+      toast.error(e.message || "Unable to connect to server");
     } finally {
       setLoading(false);
     }
