@@ -1,5 +1,9 @@
 import mysql from "mysql2/promise";
-import "dotenv/config";
+import dotenv from "dotenv";
+import { existsSync } from "fs";
+if (existsSync(".env")) {
+  dotenv.config();
+}
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
