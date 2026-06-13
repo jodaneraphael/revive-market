@@ -1,0 +1,297 @@
+=====================================================================
+  REVIVE MARKET — FULL DEPLOYMENT GUIDE (Railway + Netlify)
+=====================================================================
+
+Last updated: 2026-06-13
+
+=====================================================================
+  REQUIREMENTS
+=====================================================================
+
+- GitHub account
+- Railway account (sign up at https://railway.app)
+- Netlify account (sign up at https://netlify.com)
+- SMTP credentials for email (e.g. Gmail app password)
+- Generate a random JWT_SECRET (e.g. openssl rand -hex 32)
+
+=====================================================================
+  PROJECT STRUCTURE
+=====================================================================
+
+repo-root/
+  backend/
+    server.js
+    Dockerfile
+    railway.json
+    .dockerignore
+    .env.example
+    package.json
+    db/
+      init.js
+      schema.sql
+      seed.sql
+    routes/
+    lib/
+    middleware/
+    uploads/
+  frontend/
+    netlify.toml
+    vite.config.ts
+    package.json
+    src/
+      routes/
+      components/
+      lib/
+
+=====================================================================
+  STEP 1 — PUSH CODE TO GITHUB
+=====================================================================
+
+  git init
+  git add .
+  git commit -m "initial commit"
+  # Create a repo on GitHub first, then:
+  git remote add origin https://github.com/YOUR_USER/revive-market.git
+  git push -u origin main
+
+  NOTE: The frontend/ folder MUST NOT have its own nested .git folder.
+  If it does, remove it:
+    Remove-Item -Recurse -Force frontend/.git
+    git rm --cached frontend
+    git add frontend/
+    git commit -m "fix: remove nested git repo"
+    git push
+
+=====================================================================
+  STEP 2 — DEPLOY BACKEND ON RAILWAY
+=====================================================================
+
+  2a. Go to https://railway.app and sign in with GitHub
+
+  2b. Click "New Project" → "Deploy from GitHub repo"
+
+  2c. Select your repo (jodaneraphael/revive-market)
+
+  2d. In the service dashboard:
+      - Settings → Root Directory → enter: backend
+      - Save
+
+  2e. Railway auto-detects the Dockerfile and builds
+
+  2f. Add MySQL plugin:
+      - Click "New" → "Add a Plugin" → "MySQL"
+      - Wait for it to provision
+      - Click the MySQL service → "Connect" tab
+      - Copy these values:
+        MYSQL_HOST (e.g. roundhouse.proxy.rlwy.net)
+        MYSQL_PORT (usually 3306)
+        MYSQL_USER (e.g. root)
+        MYSQL_PASSWORD
+        MYSQL_DATABASE (e.g. railway)
+
+  2g. Set environment variables on the backend service:
+      - Variables → add these:
+
+        DB_HOST = (from MySQL Connect tab)
+        DB_PORT = 3306
+        DB_USER = (from MySQL Connect tab)
+        DB_PASSWORD = (from MySQL Connect tab)
+        DB_NAME = railway
+        JWT_SECRET = <generate-a-random-long-string>
+        CORS_ORIGIN = https://your-site.netlify.app (add later after Netlify deploy)
+        PORT = 3001
+
+        SMTP_HOST = smtp.gmail.com
+        SMTP_PORT = 587
+        SMTP_USER = your-email@gmail.com
+        SMTP_PASSWORD = your-gmail-app-password
+        SMTP_FROM = noreply@revivemarket.com
+        SMTP_FROM_NAME = REVIVE MARKET
+
+  2h. Deploy will trigger automatically. Wait for build to succeed.
+
+  2i. Open a Railway Shell (terminal) on the backend service and run:
+      node db/init.js
+      This creates the database schema and seeds sample data.
+
+  2j. Go to Settings → Networking → Generate Domain
+      Copy the URL (e.g. https://revive-market-api.up.railway.app)
+
+=====================================================================
+  STEP 3 — DEPLOY FRONTEND ON NETLIFY
+=====================================================================
+
+  3a. Go to https://netlify.com and sign in with GitHub
+
+  3b. Click "Add new site" → "Import an existing project"
+
+  3c. Select your repo (jodaneraphael/revive-market)
+
+  3d. Configure build settings:
+      - Base directory: frontend
+      - Build command: npm run build
+      - Publish directory: dist
+      - Functions directory: (leave empty)
+
+  3e. Add environment variables:
+
+      VITE_API_URL = https://your-railway-url.up.railway.app/api
+      NITRO_PRESET = netlify
+
+      (Replace "your-railway-url" with the URL from Step 2j)
+
+  3f. Click "Deploy site"
+
+  3g. After deploy finishes, go to Site settings → Domain
+      - Copy your site URL (e.g. https://revivemarket.netlify.app)
+
+  3h. Go back to Railway → backend service → Variables
+      - Update CORS_ORIGIN to your Netlify URL:
+        CORS_ORIGIN = https://revivemarket.netlify.app
+
+  3i. Redeploy the Railway backend (or just restart it)
+
+=====================================================================
+  STEP 4 — VERIFY
+=====================================================================
+
+  - Visit https://revivemarket.netlify.app
+  - The frontend should load and render
+  - Try logging in (the frontend calls the Railway backend)
+  - Create an account
+  - Browse products (/catalog)
+  - Place an order, submit a sell request, book a repair
+
+=====================================================================
+  CONFIGURATION FILES REFERENCE
+=====================================================================
+
+  backend/Dockerfile:
+  ─────────────────────────────────────────────────
+  FROM node:20-alpine
+  WORKDIR /app
+  COPY package.json package-lock.json ./
+  RUN npm ci --omit=dev
+  COPY . .
+  RUN mkdir -p /app/uploads && chmod 777 /app/uploads
+  EXPOSE 3001
+  CMD ["node", "server.js"]
+
+  backend/railway.json:
+  ─────────────────────────────────────────────────
+  {
+    "$schema": "https://railway.app/railway.schema.json",
+    "build": {
+      "builder": "DOCKERFILE",
+      "dockerfilePath": "Dockerfile"
+    },
+    "deploy": {
+      "restartPolicyType": "ON_FAILURE",
+      "restartPolicyMaxRetries": 10
+    }
+  }
+
+  backend/.dockerignore:
+  ─────────────────────────────────────────────────
+  node_modules
+  .git
+  .env
+  uploads/*
+  !uploads/.gitkeep
+  *.md
+
+  frontend/netlify.toml:
+  ─────────────────────────────────────────────────
+  [build]
+    command = "npm run build"
+    publish = "dist"
+
+  [[redirects]]
+    from = "/*"
+    to = "/.netlify/functions/server"
+    status = 200
+
+  frontend/vite.config.ts (relevant section):
+  ─────────────────────────────────────────────────
+  export default defineConfig({
+    tanstackStart: {
+      server: { entry: "server" },
+    },
+    nitro: { preset: "netlify" },   // <-- THIS IS CRITICAL
+  });
+
+=====================================================================
+  RAILWAY PRICING
+=====================================================================
+
+  - Trial (first 30 days): $5 one-time credit
+  - After trial: Free plan with $1/month credit (services stop when depleted)
+  - To keep running: Hobby plan ($5/month) gives $5/month in usage credits
+    which covers a small backend + MySQL
+
+=====================================================================
+  NETLIFY PRICING
+=====================================================================
+
+  - Free tier: 300 credits/month
+  - Production deploys cost 15 credits each
+  - Bandwidth: 20 credits per GB
+  - For a low-traffic site, the free plan is sufficient
+  - Sites pause when credits run out (resume next cycle)
+
+=====================================================================
+  TROUBLESHOOTING
+=====================================================================
+
+  Issue: Netlify shows "Page not found"
+  ───────────────────────────────────────
+  - Ensure NITRO_PRESET=netlify is set in Netlify env vars
+  - Ensure vite.config.ts has nitro: { preset: "netlify" }
+  - Ensure netlify.toml redirects to /.netlify/functions/server
+    (NOT /index — the function is named "server")
+  - Trigger a fresh deploy on Netlify after pushing changes
+
+  Issue: Railway build fails
+  ───────────────────────────
+  - Check Root Directory is set to "backend" in service Settings
+  - Ensure Dockerfile and railway.json exist in backend/
+  - Check build logs for errors
+
+  Issue: Frontend can't reach backend
+  ────────────────────────────────────
+  - Verify VITE_API_URL is correct in Netlify env vars (must end with /api)
+  - Verify CORS_ORIGIN is set on Railway to match the Netlify domain
+  - Ensure the Railway backend service has a generated domain
+
+  Issue: "frontend" folder treated as submodule
+  ───────────────────────────────────────────────
+  - Remove nested .git: Remove-Item -Recurse -Force frontend/.git
+  - Remove gitlink: git rm --cached frontend
+  - Re-add: git add frontend/
+  - Commit and push
+
+=====================================================================
+  ENVIRONMENT VARIABLES (COMPLETE LIST)
+=====================================================================
+
+  Railway (backend service):
+  ────────────────────────────
+  DB_HOST          MySQL host address
+  DB_PORT          3306
+  DB_USER          MySQL user
+  DB_PASSWORD      MySQL password
+  DB_NAME          railway (default database name from Railway MySQL plugin)
+  JWT_SECRET       Random string for JWT signing
+  CORS_ORIGIN      The full Netlify URL (e.g. https://revivemarket.netlify.app)
+  PORT             3001
+  SMTP_HOST        SMTP server (e.g. smtp.gmail.com)
+  SMTP_PORT        587
+  SMTP_USER        SMTP username (your email)
+  SMTP_PASSWORD    SMTP password (Gmail app password)
+  SMTP_FROM        noreply@revivemarket.com
+  SMTP_FROM_NAME   REVIVE MARKET
+
+  Netlify (frontend site):
+  ─────────────────────────
+  VITE_API_URL     https://your-railway-url.up.railway.app/api
+  NITRO_PRESET     netlify
